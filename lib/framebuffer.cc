@@ -219,6 +219,9 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
   assert(parallel >= 1 && parallel <= 3);
 
   bitplane_buffer_ = new gpio_bits_t[double_rows_ * columns_ * kBitPlanes];
+  color_r_ = new uint16_t[height_ * columns_];
+  color_g_ = new uint16_t[height_ * columns_];
+  color_b_ = new uint16_t[height_ * columns_];
 
   // If we're the first Framebuffer created, the shared PixelMapper is
   // still NULL, so create one.
@@ -242,6 +245,10 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
 
 Framebuffer::~Framebuffer() {
   delete [] bitplane_buffer_;
+
+  delete [] color_r_;
+  delete [] color_g_;
+  delete [] color_b_;
 }
 
 // TODO: this should also be parsed from some special formatted string, e.g.
@@ -354,18 +361,19 @@ inline gpio_bits_t *Framebuffer::ValueAt(int double_row, int column, int bit) {
 }
 
 void Framebuffer::Clear() {
-  if (inverse_color_) {
+    Fill(0, 0, 0);
+/*  if (inverse_color_) {
     Fill(0, 0, 0);
   } else  {
     // Cheaper.
     memset(bitplane_buffer_, 0,
            sizeof(*bitplane_buffer_) * double_rows_ * columns_ * kBitPlanes);
-  }
+  }*/
 }
 
 // Do CIE1931 luminance correction and scale to output bitplanes
 static uint16_t luminance_cie1931(uint8_t c, uint8_t brightness) {
-  float out_factor = ((1 << kBitPlanes) - 1);
+  float out_factor = 32.f*((1 << kBitPlanes) - 1);
   float v = (float) c * brightness / 255.0;
   return out_factor * ((v <= 8) ? v / 902.3 : pow((v + 16) / 116.0, 3));
 }
@@ -421,6 +429,15 @@ void Framebuffer::Fill(uint8_t r, uint8_t g, uint8_t b) {
   uint16_t red, green, blue;
   MapColors(r, g, b, &red, &green, &blue);
 
+#if 1
+  for (int y = 0; y < height_; y++)
+    for (int x = 0; x < columns_; x++)
+    {
+      SetPixel(x, y, r, g, b);
+    }
+#endif
+
+#if 1
   const struct HardwareMapping &h = *hardware_mapping_;
   gpio_bits_t all_r = h.p0_r1 | h.p0_r2 | h.p1_r1 | h.p1_r2 | h.p2_r1 | h.p2_r2;
   gpio_bits_t all_g = h.p0_g1 | h.p0_g2 | h.p1_g1 | h.p1_g2 | h.p2_g1 | h.p2_g2;
@@ -440,19 +457,75 @@ void Framebuffer::Fill(uint8_t r, uint8_t g, uint8_t b) {
       }
     }
   }
+#endif
 }
 
 int Framebuffer::width() const { return (*shared_mapper_)->width(); }
 int Framebuffer::height() const { return (*shared_mapper_)->height(); }
 
 void Framebuffer::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+  uint16_t red, green, blue;
+  MapColors(r, g, b, &red, &green, &blue);
+
+  SetPixelHDR(x,y, red, green, blue);
+}
+
+void Framebuffer::SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
+  if (y > height_ || x > columns_ || x < 0 || y < 0)
+  {
+    //printf("wrong xy: %i,%i\n", x,y);
+    return;
+  }
+
+  color_r_[y*columns_+x] = red;
+  color_g_[y*columns_+x] = green;
+  color_b_[y*columns_+x] = blue;
+
+
+}
+
+inline void Framebuffer::SetPixelHDR_tobp(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
+  
+  //static int n = 0;
+  //n = (n+x+y+(rand()&3))&31;
+int n = rand() & 31;
+  //int n =16;
+  //int n = (x*y) & 31;
+  //int n = (rand() & 63)-16;
+
+
+const int dither[8][8] = {
+{ 0, 32, 8, 40, 2, 34, 10, 42}, /* 8x8 Bayer ordered dithering */
+{48, 16, 56, 24, 50, 18, 58, 26}, /* pattern. Each input pixel */
+{12, 44, 4, 36, 14, 46, 6, 38}, /* is scaled to the 0..63 range */
+{60, 28, 52, 20, 62, 30, 54, 22}, /* before looking in this table */
+{ 3, 35, 11, 43, 1, 33, 9, 41}, /* to determine the action. */
+{51, 19, 59, 27, 49, 17, 57, 25},
+{15, 47, 7, 39, 13, 45, 5, 37},
+{63, 31, 55, 23, 61, 29, 53, 21} }; 
+
+  //int n = (dither[x&7][y&7]) / 2;
+
+//  n = (rand() & 15) | (n & (31^15));
+
+  int redn = red + n;
+  int greenn = green + n;
+  int bluen = blue + n;
+
+  #define clamp(_v, _min, _max) _v = _v > _max ? _max : (_v < _min ? _min : _v);
+  clamp(redn, 0, 65535);
+  clamp(greenn, 0, 65535);
+  clamp(bluen, 0, 65535);
+
+  red = redn / 32;
+  green = greenn / 32;
+  blue = bluen / 32;
+
+
   const PixelDesignator *designator = (*shared_mapper_)->get(x, y);
   if (designator == NULL) return;
   const int pos = designator->gpio_word;
   if (pos < 0) return;  // non-used pixel marker.
-
-  uint16_t red, green, blue;
-  MapColors(r, g, b, &red, &green, &blue);
 
   uint32_t *bits = bitplane_buffer_ + pos;
   const int min_bit_plane = kBitPlanes - pwm_bits_;
@@ -470,6 +543,14 @@ void Framebuffer::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     bits += columns_;
   }
 }
+
+void Framebuffer::SetTilePtrs(void** ptrs)
+{
+  tileptrs_ = ptrs;
+  tileptrs_w_ = columns_ / 16;
+  tileptrs_h_ = height_ / 16;
+}
+
 
 // Strange LED-mappings such as RBG or so are handled here.
 gpio_bits_t Framebuffer::GetGpioFromLedSequence(char col,
@@ -561,6 +642,67 @@ void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
   }
 
   color_clk_mask |= h.clock;
+
+
+  if (tileptrs_)
+  {
+    for (int ty = 0; ty < tileptrs_h_; ty++)
+    {
+#if 0
+    static int robs = 0;
+    static int robe = 0;
+    robs++;
+    robs %= 6;
+    robe = robs+1;    
+    for (int ty = robs; ty < robe; ty++)
+    {
+#endif
+      for (int tx = 0; tx < tileptrs_w_; tx++)
+      {
+        uint16_t* tiledata = (uint16_t *)tileptrs_[ty * tileptrs_w_ + tx];
+        if (tiledata)
+        {
+          for (int y = 0; y < 16; y++)
+           for (int x = 0; x < 16; x++)
+           {
+              int offu = (y*16+x)*3;
+              uint16_t r = tiledata[offu+0];
+              uint16_t g = tiledata[offu+1];
+              uint16_t b = tiledata[offu+2];
+      
+              SetPixelHDR_tobp(x+tx*16, y+ty*16, r, g, b);
+              //SetPixelHDR_tobp(x, y, x*2, y*2, 0);
+            }
+        }
+        else
+        {
+
+          for (int y = 0; y < 16; y++)
+           for (int x = 0; x < 16; x++)
+           {
+             int offu = (y+ty*16)*columns_+(x+tx*16);
+
+             SetPixelHDR_tobp((x+tx*16), (y+ty*16), color_r_[offu], color_g_[offu], color_b_[offu]);
+           }
+
+        }
+      }
+    }
+  }
+//  srand(666);
+  else
+  {
+    for (int y = 0; y < height_; y++)
+     for (int x = 0; x < columns_; x++)
+     {
+       int offu = y*columns_+x;
+
+        SetPixelHDR_tobp(x, y, color_r_[offu], color_g_[offu], color_b_[offu]);
+        //SetPixelHDR_tobp(x, y, x*2, y*2, 0);
+      }
+  }
+
+
 
   // Depending if we do dithering, we might not always show the lowest bits.
   const int start_bit = std::max(pwm_low_bit, kBitPlanes - pwm_bits_);

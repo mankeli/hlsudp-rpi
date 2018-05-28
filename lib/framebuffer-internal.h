@@ -103,8 +103,12 @@ public:
   int width() const;
   int height() const;
   void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
+  void SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue);
+  void SetPixelHDR_tobp(int x, int y, uint16_t red, uint16_t green, uint16_t blue);
   void Clear();
   void Fill(uint8_t red, uint8_t green, uint8_t blue);
+
+  void SetTilePtrs(void** tileptrs);
 
 private:
   static const struct HardwareMapping *hardware_mapping_;
@@ -142,8 +146,20 @@ private:
   // Each bitplane-column is pre-filled IoBits, of which the colors are set.
   // Of course, that means that we store unrelated bits in the frame-buffer,
   // but it allows easy access in the critical section.
+
+  // REMOVED D:D:DDD:;:F
   gpio_bits_t *bitplane_buffer_;
   inline gpio_bits_t *ValueAt(int double_row, int column, int bit);
+
+  uint16_t *color_r_;
+  uint16_t *color_g_;
+  uint16_t *color_b_;
+
+  void** tileptrs_;
+  int tileptrs_w_;
+  int tileptrs_h_;
+
+
 
   PixelDesignatorMap **shared_mapper_;  // Storage in RGBMatrix.
 };

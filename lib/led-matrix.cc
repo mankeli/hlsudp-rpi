@@ -406,6 +406,13 @@ void RGBMatrix::SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue)
   active_->SetPixel(x, y, red, green, blue);
 }
 
+void RGBMatrix::SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
+  active_->SetPixelHDR(x, y, red, green, blue);
+}
+void RGBMatrix::SetTilePtrs(void** ptrs) {
+  active_->SetTilePtrs(ptrs);
+}
+
 void RGBMatrix::Clear() {
   active_->Clear();
 }
@@ -528,6 +535,14 @@ void FrameCanvas::SetPixel(int x, int y,
                          uint8_t red, uint8_t green, uint8_t blue) {
   frame_->SetPixel(x, y, red, green, blue);
 }
+void FrameCanvas::SetPixelHDR(int x, int y,
+                         uint16_t red, uint16_t green, uint16_t blue) {
+  frame_->SetPixelHDR(x, y, red, green, blue);
+}
+void FrameCanvas::SetTilePtrs(void** ptrs) {
+  frame_->SetTilePtrs(ptrs);
+}
+
 void FrameCanvas::Clear() { return frame_->Clear(); }
 void FrameCanvas::Fill(uint8_t red, uint8_t green, uint8_t blue) {
   frame_->Fill(red, green, blue);

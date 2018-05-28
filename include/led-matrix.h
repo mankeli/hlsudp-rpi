@@ -263,9 +263,12 @@ public:
   virtual int height() const;
   virtual void SetPixel(int x, int y,
                         uint8_t red, uint8_t green, uint8_t blue);
+  virtual void SetPixelHDR(int x, int y,
+                        uint16_t red, uint16_t green, uint16_t blue);
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
 
+  virtual void SetTilePtrs(void** ptrs);
 
 #ifndef REMOVE_DEPRECATED_TRANSFORMERS
   //--- deprecated section: transformers. Use PixelMapper instead.
@@ -355,9 +358,13 @@ public:
   virtual int height() const;
   virtual void SetPixel(int x, int y,
                         uint8_t red, uint8_t green, uint8_t blue);
+  virtual void SetPixelHDR(int x, int y,
+                        uint16_t red, uint16_t green, uint16_t blue);
+
   virtual void Clear();
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
 
+  virtual void SetTilePtrs(void** ptrs);
 private:
   friend class RGBMatrix;
 
