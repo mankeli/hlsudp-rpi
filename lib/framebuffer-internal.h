@@ -92,7 +92,18 @@ public:
   }
   uint8_t brightness() { return brightness_; }
 
+  void PrepareDump(
+    uint16_t *color_r_,
+    uint16_t *color_g_,
+    uint16_t *color_b_,
+
+    void** tileptrs_,
+    int tileptrs_w_,
+    int tileptrs_h_
+  );
+
   void DumpToMatrix(GPIO *io, int pwm_bits_to_show);
+
 
   void Serialize(const char **data, size_t *len) const;
   bool Deserialize(const char *data, size_t len);
@@ -102,13 +113,7 @@ public:
   // have an unnecessary vtable.
   int width() const;
   int height() const;
-  void SetPixel(int x, int y, uint8_t red, uint8_t green, uint8_t blue);
-  void SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue);
   void SetPixelHDR_tobp(int x, int y, uint16_t red, uint16_t green, uint16_t blue);
-  void Clear();
-  void Fill(uint8_t red, uint8_t green, uint8_t blue);
-
-  void SetTilePtrs(void** tileptrs);
 
 private:
   static const struct HardwareMapping *hardware_mapping_;
@@ -150,14 +155,6 @@ private:
   // REMOVED D:D:DDD:;:F
   gpio_bits_t *bitplane_buffer_;
   inline gpio_bits_t *ValueAt(int double_row, int column, int bit);
-
-  uint16_t *color_r_;
-  uint16_t *color_g_;
-  uint16_t *color_b_;
-
-  void** tileptrs_;
-  int tileptrs_w_;
-  int tileptrs_h_;
 
 
 

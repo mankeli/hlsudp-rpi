@@ -365,14 +365,30 @@ public:
   virtual void Fill(uint8_t red, uint8_t green, uint8_t blue);
 
   virtual void SetTilePtrs(void** ptrs);
+
+
+  uint16_t *color_r_;
+  uint16_t *color_g_;
+  uint16_t *color_b_;
+
+  void** tileptrs_;
+  int tileptrs_w_;
+  int tileptrs_h_;
+  
 private:
   friend class RGBMatrix;
 
-  FrameCanvas(internal::Framebuffer *frame) : frame_(frame){}
+  FrameCanvas(internal::Framebuffer *frame);
   virtual ~FrameCanvas();   // Any FrameCanvas is owned by RGBMatrix.
   internal::Framebuffer *framebuffer() { return frame_; }
 
   internal::Framebuffer *const frame_;
+
+
+  const int height_;   // rows * parallel
+  const int columns_;  // Number of columns. Number of chained boards * 32.
+
+
 };
 
 // Runtime options to simplify doing common things for many programs such as

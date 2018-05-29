@@ -99,6 +99,16 @@ public:
       const uint32_t start_time_us = GetMicrosecondCounter();
 
       current_frame_->framebuffer()
+        ->PrepareDump(
+          current_frame_->color_r_,
+          current_frame_->color_g_,
+          current_frame_->color_b_,
+          current_frame_->tileptrs_,
+          current_frame_->tileptrs_w_,
+          current_frame_->tileptrs_h_
+          );
+
+      current_frame_->framebuffer()
         ->DumpToMatrix(io_, start_bit_[low_bit_sequence % 4]);
 
       {
@@ -272,7 +282,7 @@ RGBMatrix::~RGBMatrix() {
 
   // Make sure LEDs are off.
   active_->Clear();
-  active_->framebuffer()->DumpToMatrix(io_, 0);
+  //active_->framebuffer()->DumpToMatrix(io_, 0);
 
   for (size_t i = 0; i < created_frames_.size(); ++i) {
     delete created_frames_[i];
@@ -528,25 +538,85 @@ void RGBMatrix::ApplyStaticTransformerDeprecated(
 #endif  // REMOVE_DEPRECATED_TRANSFORMERS
 
 // FrameCanvas implementation of Canvas
-FrameCanvas::~FrameCanvas() { delete frame_; }
-int FrameCanvas::width() const { return frame_->width(); }
-int FrameCanvas::height() const { return frame_->height(); }
-void FrameCanvas::SetPixel(int x, int y,
-                         uint8_t red, uint8_t green, uint8_t blue) {
-  frame_->SetPixel(x, y, red, green, blue);
-}
-void FrameCanvas::SetPixelHDR(int x, int y,
-                         uint16_t red, uint16_t green, uint16_t blue) {
-  frame_->SetPixelHDR(x, y, red, green, blue);
-}
-void FrameCanvas::SetTilePtrs(void** ptrs) {
-  frame_->SetTilePtrs(ptrs);
+FrameCanvas::FrameCanvas(internal::Framebuffer *frame) :
+frame_(frame),
+columns_(frame->width()),
+height_(frame->height())
+{
+  color_r_ = new uint16_t[height_ * columns_];
+  color_g_ = new uint16_t[height_ * columns_];
+  color_b_ = new uint16_t[height_ * columns_];
 }
 
-void FrameCanvas::Clear() { return frame_->Clear(); }
-void FrameCanvas::Fill(uint8_t red, uint8_t green, uint8_t blue) {
-  frame_->Fill(red, green, blue);
+FrameCanvas::~FrameCanvas() {
+  delete frame_;
+
+  delete [] color_r_;
+  delete [] color_g_;
+  delete [] color_b_;
 }
+int FrameCanvas::width() const { return frame_->width(); }
+int FrameCanvas::height() const { return frame_->height(); }
+
+void FrameCanvas::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+  uint16_t red, green, blue;
+  //TODO
+  //MapColors(r, g, b, &red, &green, &blue);
+  red=r;
+  green=g;
+  blue=b;
+
+  SetPixelHDR(x,y, red, green, blue);
+}
+
+void FrameCanvas::SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
+  if (y > height_ || x > columns_ || x < 0 || y < 0)
+  {
+    //printf("wrong xy: %i,%i\n", x,y);
+    return;
+  }
+
+  color_r_[y*columns_+x] = red;
+  color_g_[y*columns_+x] = green;
+  color_b_[y*columns_+x] = blue;
+
+
+}
+
+void FrameCanvas::SetTilePtrs(void** ptrs)
+{
+  tileptrs_ = ptrs;
+  tileptrs_w_ = columns_ / 16;
+  tileptrs_h_ = height_ / 16;
+}
+
+
+void FrameCanvas::Clear() {
+    Fill(0, 0, 0);
+/*  if (inverse_color_) {
+    Fill(0, 0, 0);
+  } else  {
+    // Cheaper.
+    memset(bitplane_buffer_, 0,
+           sizeof(*bitplane_buffer_) * double_rows_ * columns_ * kBitPlanes);
+  }*/
+}
+
+void FrameCanvas::Fill(uint8_t r, uint8_t g, uint8_t b) {
+  uint16_t red, green, blue;
+  //TODO
+  //MapColors(r, g, b, &red, &green, &blue);
+  red=r;
+  green=g;
+  blue=b;
+
+  for (int y = 0; y < height_; y++)
+    for (int x = 0; x < columns_; x++)
+    {
+      SetPixel(x, y, r, g, b);
+    }
+}
+
 bool FrameCanvas::SetPWMBits(uint8_t value) { return frame_->SetPWMBits(value); }
 uint8_t FrameCanvas::pwmbits() { return frame_->pwmbits(); }
 

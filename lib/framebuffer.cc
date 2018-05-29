@@ -219,9 +219,6 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
   assert(parallel >= 1 && parallel <= 3);
 
   bitplane_buffer_ = new gpio_bits_t[double_rows_ * columns_ * kBitPlanes];
-  color_r_ = new uint16_t[height_ * columns_];
-  color_g_ = new uint16_t[height_ * columns_];
-  color_b_ = new uint16_t[height_ * columns_];
 
   // If we're the first Framebuffer created, the shared PixelMapper is
   // still NULL, so create one.
@@ -240,15 +237,11 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
     }
   }
 
-  Clear();
+//  Clear();
 }
 
 Framebuffer::~Framebuffer() {
   delete [] bitplane_buffer_;
-
-  delete [] color_r_;
-  delete [] color_g_;
-  delete [] color_b_;
 }
 
 // TODO: this should also be parsed from some special formatted string, e.g.
@@ -360,17 +353,6 @@ inline gpio_bits_t *Framebuffer::ValueAt(int double_row, int column, int bit) {
                             + column ];
 }
 
-void Framebuffer::Clear() {
-    Fill(0, 0, 0);
-/*  if (inverse_color_) {
-    Fill(0, 0, 0);
-  } else  {
-    // Cheaper.
-    memset(bitplane_buffer_, 0,
-           sizeof(*bitplane_buffer_) * double_rows_ * columns_ * kBitPlanes);
-  }*/
-}
-
 // Do CIE1931 luminance correction and scale to output bitplanes
 static uint16_t luminance_cie1931(uint8_t c, uint8_t brightness) {
   float out_factor = 32.f*((1 << kBitPlanes) - 1);
@@ -425,64 +407,8 @@ inline void Framebuffer::MapColors(
   }
 }
 
-void Framebuffer::Fill(uint8_t r, uint8_t g, uint8_t b) {
-  uint16_t red, green, blue;
-  MapColors(r, g, b, &red, &green, &blue);
-
-#if 1
-  for (int y = 0; y < height_; y++)
-    for (int x = 0; x < columns_; x++)
-    {
-      SetPixel(x, y, r, g, b);
-    }
-#endif
-
-#if 1
-  const struct HardwareMapping &h = *hardware_mapping_;
-  gpio_bits_t all_r = h.p0_r1 | h.p0_r2 | h.p1_r1 | h.p1_r2 | h.p2_r1 | h.p2_r2;
-  gpio_bits_t all_g = h.p0_g1 | h.p0_g2 | h.p1_g1 | h.p1_g2 | h.p2_g1 | h.p2_g2;
-  gpio_bits_t all_b = h.p0_b1 | h.p0_b2 | h.p1_b1 | h.p1_b2 | h.p2_b1 | h.p2_b2;
-
-  for (int b = kBitPlanes - pwm_bits_; b < kBitPlanes; ++b) {
-    uint16_t mask = 1 << b;
-    gpio_bits_t plane_bits = 0;
-    plane_bits |= ((red & mask) == mask)   ? all_r : 0;
-    plane_bits |= ((green & mask) == mask) ? all_g : 0;
-    plane_bits |= ((blue & mask) == mask)  ? all_b : 0;
-
-    for (int row = 0; row < double_rows_; ++row) {
-      uint32_t *row_data = ValueAt(row, 0, b);
-      for (int col = 0; col < columns_; ++col) {
-        *row_data++ = plane_bits;
-      }
-    }
-  }
-#endif
-}
-
 int Framebuffer::width() const { return (*shared_mapper_)->width(); }
 int Framebuffer::height() const { return (*shared_mapper_)->height(); }
-
-void Framebuffer::SetPixel(int x, int y, uint8_t r, uint8_t g, uint8_t b) {
-  uint16_t red, green, blue;
-  MapColors(r, g, b, &red, &green, &blue);
-
-  SetPixelHDR(x,y, red, green, blue);
-}
-
-void Framebuffer::SetPixelHDR(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
-  if (y > height_ || x > columns_ || x < 0 || y < 0)
-  {
-    //printf("wrong xy: %i,%i\n", x,y);
-    return;
-  }
-
-  color_r_[y*columns_+x] = red;
-  color_g_[y*columns_+x] = green;
-  color_b_[y*columns_+x] = blue;
-
-
-}
 
 inline void Framebuffer::SetPixelHDR_tobp(int x, int y, uint16_t red, uint16_t green, uint16_t blue) {
   
@@ -542,13 +468,6 @@ const int dither[8][8] = {
     *bits = (*bits & designator_mask) | color_bits;
     bits += columns_;
   }
-}
-
-void Framebuffer::SetTilePtrs(void** ptrs)
-{
-  tileptrs_ = ptrs;
-  tileptrs_w_ = columns_ / 16;
-  tileptrs_h_ = height_ / 16;
 }
 
 
@@ -630,20 +549,16 @@ void Framebuffer::CopyFrom(const Framebuffer *other) {
   memcpy(bitplane_buffer_, other->bitplane_buffer_, buffer_size_);
 }
 
-void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
-  const struct HardwareMapping &h = *hardware_mapping_;
-  gpio_bits_t color_clk_mask = 0;  // Mask of bits while clocking in.
-  color_clk_mask |= h.p0_r1 | h.p0_g1 | h.p0_b1 | h.p0_r2 | h.p0_g2 | h.p0_b2;
-  if (parallel_ >= 2) {
-    color_clk_mask |= h.p1_r1 | h.p1_g1 | h.p1_b1 | h.p1_r2 | h.p1_g2 | h.p1_b2;
-  }
-  if (parallel_ >= 3) {
-    color_clk_mask |= h.p2_r1 | h.p2_g1 | h.p2_b1 | h.p2_r2 | h.p2_g2 | h.p2_b2;
-  }
+void Framebuffer::PrepareDump(
+  uint16_t *color_r_,
+  uint16_t *color_g_,
+  uint16_t *color_b_,
 
-  color_clk_mask |= h.clock;
-
-
+  void** tileptrs_,
+  int tileptrs_w_,
+  int tileptrs_h_
+) {
+#if 1
   if (tileptrs_)
   {
     for (int ty = 0; ty < tileptrs_h_; ty++)
@@ -701,8 +616,22 @@ void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
         //SetPixelHDR_tobp(x, y, x*2, y*2, 0);
       }
   }
+#endif
+}
 
 
+void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
+  const struct HardwareMapping &h = *hardware_mapping_;
+  gpio_bits_t color_clk_mask = 0;  // Mask of bits while clocking in.
+  color_clk_mask |= h.p0_r1 | h.p0_g1 | h.p0_b1 | h.p0_r2 | h.p0_g2 | h.p0_b2;
+  if (parallel_ >= 2) {
+    color_clk_mask |= h.p1_r1 | h.p1_g1 | h.p1_b1 | h.p1_r2 | h.p1_g2 | h.p1_b2;
+  }
+  if (parallel_ >= 3) {
+    color_clk_mask |= h.p2_r1 | h.p2_g1 | h.p2_b1 | h.p2_r2 | h.p2_g2 | h.p2_b2;
+  }
+
+  color_clk_mask |= h.clock;
 
   // Depending if we do dithering, we might not always show the lowest bits.
   const int start_bit = std::max(pwm_low_bit, kBitPlanes - pwm_bits_);
@@ -749,5 +678,8 @@ void Framebuffer::DumpToMatrix(GPIO *io, int pwm_low_bit) {
     }
   }
 }
+
+
+
 }  // namespace internal
 }  // namespace rgb_matrix

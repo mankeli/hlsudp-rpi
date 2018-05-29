@@ -124,7 +124,6 @@ void *frametuuperthread(void *x_void_ptr)
   while(1)
   {
     pthread_mutex_lock (&sync_lock);
-    //pthread_cond_wait (&sync_cond, &sync_lock);
 
     struct timespec ts;
     struct timeval now;
@@ -135,6 +134,7 @@ void *frametuuperthread(void *x_void_ptr)
 
 
     int condval = pthread_cond_timedwait (&sync_cond, &sync_lock, &ts);
+    //int condval = pthread_cond_wait (&sync_cond, &sync_lock);
 
     if (condval == 0)
     {
