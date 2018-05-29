@@ -94,6 +94,21 @@ static void InterruptHandler(int signo)
 
 
 
+void centertext(rgb_matrix::FrameCanvas *swap_buffer, rgb_matrix::Font& font, int y, const char *txt)
+{
+  const int fx = 4;
+  rgb_matrix::Color white = rgb_matrix::Color(200,200,200);
+
+  rgb_matrix::DrawText(swap_buffer, font, (swap_buffer->width()-strlen(txt)*fx)/2, y + font.baseline(),
+                       white, NULL, txt, 0);
+
+}
+
+
+
+
+
+
 RGBMatrix *matrix;
 rgb_matrix::FrameCanvas *swap_buffer;
   rgb_matrix::Font font;
@@ -109,11 +124,54 @@ void *frametuuperthread(void *x_void_ptr)
   while(1)
   {
     pthread_mutex_lock (&sync_lock);
-    pthread_cond_wait (&sync_cond, &sync_lock);
+    //pthread_cond_wait (&sync_cond, &sync_lock);
 
-    swap_buffer->SetTilePtrs((void**)sync_data);
-    pthread_mutex_unlock (&sync_lock);
-    swap_buffer = matrix->SwapOnVSync(swap_buffer);
+    struct timespec ts;
+    struct timeval now;
+
+    gettimeofday(&now,NULL);
+    ts.tv_sec = now.tv_sec+2;
+    ts.tv_nsec = now.tv_usec;
+
+
+    int condval = pthread_cond_timedwait (&sync_cond, &sync_lock, &ts);
+
+    if (condval == 0)
+    {
+      swap_buffer->SetTilePtrs((void**)sync_data);
+      pthread_mutex_unlock (&sync_lock);
+
+      swap_buffer = matrix->SwapOnVSync(swap_buffer);
+    }
+    else if (condval == ETIMEDOUT)
+    {
+      swap_buffer->SetTilePtrs(0);
+      pthread_mutex_unlock (&sync_lock);
+
+      debugf("showing screen\n");
+
+      swap_buffer->SetBrightness(30);
+      swap_buffer->set_luminance_correct(true);
+      swap_buffer->Fill(1,1,1);
+
+      for (int y = 0; y < swap_buffer->height(); y++)
+        for (int x = 0; x < swap_buffer->width(); x++)
+        {
+         int yy = swap_buffer->height()-y-1;
+         swap_buffer->SetPixelHDR(x,y, yy,yy/2,yy/4);
+         }
+
+      centertext(swap_buffer, font, 1, "^^^");
+
+      int centrow = swap_buffer->height() / 2;
+      centertext(swap_buffer, font, centrow - 6, "Hacklab");
+      centertext(swap_buffer, font, centrow, "LED System");
+
+      const char *myip = getip();
+      centertext(swap_buffer, font, swap_buffer->height() - 8, myip);
+
+      swap_buffer = matrix->SwapOnVSync(swap_buffer);
+    }
   }
 
   return NULL;
@@ -178,17 +236,6 @@ void setsignal()
 
 
  
-void centertext(rgb_matrix::FrameCanvas *swap_buffer, rgb_matrix::Font& font, int y, const char *txt)
-{
-  const int fx = 4;
-  rgb_matrix::Color white = rgb_matrix::Color(200,200,200);
-
-  rgb_matrix::DrawText(swap_buffer, font, (swap_buffer->width()-strlen(txt)*fx)/2, y + font.baseline(),
-                       white, NULL, txt, 0);
-
-}
-
-
 
 typedef struct
 {
@@ -451,75 +498,7 @@ void *recvloop(void *x_void_ptr)
       pthread_cond_signal(&sync_cond);
       pthread_mutex_unlock(&sync_lock);
 #endif
-
-#if 0
-      int cleanedframes = 0;
-      static int lastfr = fr;
-      while(lastframe != lastfr)
-      {
-        int lfoffs = lastframe * screentiles_x * screentiles_y;
-
-//        printf("frames for %i: ", lastframe);
-        for (int i = 0; i < screentiles_x * screentiles_y; i++)
-        {
-//          printf("%p, ", frameptrs[lfoffs + i]);
-
-          if (frameptrs[lfoffs + i])
-            free(frameptrs[lfoffs + i]);
-          frameptrs[lfoffs + i] = NULL;
-        } 
-//        printf("\n");
-
-        lastframe = (lastframe + 1) & 255;
-
-        cleanedframes++;
-      }
-      lastfr = fr;
-      //printf("cleaned %i frames\n", cleanedframes);
-#endif
     }
-//    else
-//      showcrap = true;
-
-    if (showcrap)
-    {
-      debugf("showing screen\n");
-      pthread_mutex_lock(&sync_lock);
-
-      swap_buffer->SetBrightness(30);
-      swap_buffer->set_luminance_correct(true);
-    swap_buffer->Fill(1,1,1);
-
-   for (int y = 0; y < swap_buffer->height(); y++)
-      for (int x = 0; x < swap_buffer->width(); x++)
-     {
-        int yy = swap_buffer->height()-y-1;
-        swap_buffer->SetPixelHDR(x,y, yy,yy/2,yy/4);
-      }
-
-    centertext(swap_buffer, font, 1, "^^^");
-
-    int centrow = swap_buffer->height() / 2;
-    centertext(swap_buffer, font, centrow - 6, "Hacklab");
-    centertext(swap_buffer, font, centrow, "LED System");
-
-    const char *myip = getip();
-    centertext(swap_buffer, font, swap_buffer->height() - 8, myip);
-
-//      swap_buffer->SetTilePtrs((void**)tileptrs);
-
-//    swap_buffer = matrix->SwapOnVSync(swap_buffer);
-
-      sync_data = NULL;
-      pthread_cond_signal(&sync_cond);
-      pthread_mutex_unlock(&sync_lock);
-
-  }
-
-    //usleep(100);
-
-
-    //diod.closepacket();
   }
 
   return NULL;
