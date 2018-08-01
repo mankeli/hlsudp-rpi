@@ -218,7 +218,11 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
   }
   assert(parallel >= 1 && parallel <= 3);
 
-  bitplane_buffer_ = new gpio_bits_t[double_rows_ * columns_ * kBitPlanes];
+//  printf("new bitplane buffer: %i,%i\n",double_rows_, columns_);
+//  bitplane_buffer_ = new gpio_bits_t[double_rows_ * columns_ * kBitPlanes];
+
+  // THIS CODE WILL EXPLODE IF DISPLAY SIZE 
+  bitplane_buffer_ = new gpio_bits_t[64 * columns_ * kBitPlanes];
 
   // If we're the first Framebuffer created, the shared PixelMapper is
   // still NULL, so create one.
@@ -228,7 +232,10 @@ Framebuffer::Framebuffer(int rows, int columns, int parallel,
   //
   // Newly created PixelMappers then can just copy around PixelDesignators
   // from the parent PixelMapper opaquely without having to know the details.
+
+  printf("shared mapper: %p, %p\n", shared_mapper_, *shared_mapper_);
   if (*shared_mapper_ == NULL) {
+    printf("creating default mapper %i, %i\n", columns_, height_);
     *shared_mapper_ = new PixelDesignatorMap(columns_, height_);
     for (int y = 0; y < height_; ++y) {
       for (int x = 0; x < columns_; ++x) {
@@ -447,7 +454,6 @@ const int dither[8][8] = {
   green = greenn / 32;
   blue = bluen / 32;
 
-
   const PixelDesignator *designator = (*shared_mapper_)->get(x, y);
   if (designator == NULL) return;
   const int pos = designator->gpio_word;
@@ -554,10 +560,29 @@ void Framebuffer::PrepareDump(
   uint16_t *color_g_,
   uint16_t *color_b_,
 
+
+
   void** tileptrs_,
   int tileptrs_w_,
   int tileptrs_h_
 ) {
+
+#if 0
+  //printf("shared mapper %p\n", shared_mapper_);
+  const PixelDesignator *designator = (*shared_mapper_)->get(0, 0);
+  printf("shared map: %p, %p %p\n", shared_mapper_, *shared_mapper_, designator);
+
+  if (designator)
+  {
+  const int pos = designator->gpio_word;
+  const uint32_t r_bits = designator->r_bit;
+  const uint32_t g_bits = designator->g_bit;
+  const uint32_t b_bits = designator->b_bit;
+  const uint32_t designator_mask = designator->mask;
+    printf("%i (%i,%i,%i) %i\n", pos, r_bits, g_bits, b_bits, designator_mask);
+  }
+#endif
+
 #if 1
   if (tileptrs_)
   {
@@ -607,13 +632,15 @@ void Framebuffer::PrepareDump(
 //  srand(666);
   else
   {
+    static float off = 0;
+    off+=0.01;
     for (int y = 0; y < height_; y++)
      for (int x = 0; x < columns_; x++)
      {
        int offu = y*columns_+x;
 
         SetPixelHDR_tobp(x, y, color_r_[offu], color_g_[offu], color_b_[offu]);
-        //SetPixelHDR_tobp(x, y, x*2, y*2, 0);
+        //SetPixelHDR_tobp(x, y, x*2, 1000+sin(y*0.5f+off)*1000, 0);
       }
   }
 #endif

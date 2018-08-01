@@ -249,17 +249,38 @@ RGBMatrix::RGBMatrix(GPIO *io, const Options &options)
     multiplex_mapper->EditColsRows(&params_.cols, &params_.rows);
   }
 
+  printf("edited stuff: %i,%i\n", params_.cols, params_.rows);
+
   Framebuffer::InitHardwareMapping(params_.hardware_mapping);
-  active_ = CreateFrameCanvas();
-  Clear();
   SetGPIO(io, true);
 
+  //shared_pixel_mapper_ = 
+
+//  shared_pixel_mapper_ = new internal::PixelDesignatorMap(params_.cols * params_.chain_length, params_.rows*params_.parallel);
+
+  internal::Framebuffer *testi = new Framebuffer(params_.rows,
+                                    params_.cols * params_.chain_length,
+                                    params_.parallel,
+                                    params_.scan_mode,
+                                    params_.led_rgb_sequence,
+                                    params_.inverse_colors,
+                                    &shared_pixel_mapper_);
+
+#if 1
   // We need to apply the mapping for the panels first.
   ApplyPixelMapper(multiplex_mapper);
 
   // .. followed by higher level mappers that might arrange panels.
-  ApplyNamedPixelMappers(options.pixel_mapper_config,
-                         params_.chain_length, params_.parallel);
+  //ApplyNamedPixelMappers(options.pixel_mapper_config,
+  //                       params_.chain_length, params_.parallel);
+#endif
+
+
+  printf("prefirst\n");
+  active_ = CreateFrameCanvas();
+  printf("postfirst\n");
+  Clear();
+
 }
 
 RGBMatrix::RGBMatrix(GPIO *io, int rows, int chained_displays,
@@ -436,10 +457,14 @@ bool RGBMatrix::ApplyPixelMapper(const PixelMapper *mapper) {
   using internal::PixelDesignatorMap;
   const int old_width = shared_pixel_mapper_->width();
   const int old_height = shared_pixel_mapper_->height();
+  printf("old wh %i, %i\n", old_width, old_height);
   int new_width, new_height;
   if (!mapper->GetSizeMapping(old_width, old_height, &new_width, &new_height)) {
     return false;
   }
+
+  printf("new wh %i, %i\n", new_width, new_height);
+
   PixelDesignatorMap *new_mapper = new PixelDesignatorMap(new_width,
                                                           new_height);
   for (int y = 0; y < new_height; ++y) {
@@ -543,9 +568,13 @@ frame_(frame),
 columns_(frame->width()),
 height_(frame->height())
 {
+  printf("creating bufs for framecanvas: %i, %i, %p\n", columns_, height_, frame);
   color_r_ = new uint16_t[height_ * columns_];
   color_g_ = new uint16_t[height_ * columns_];
   color_b_ = new uint16_t[height_ * columns_];
+
+  tileptrs_ = NULL;
+
 }
 
 FrameCanvas::~FrameCanvas() {

@@ -4,11 +4,14 @@ make  # compile library
 g++ -Wall -O3 -g -Iinclude simple-udp.cc -o simple-udp -Llib -lrgbmatrix -lrt -lm -lpthread
 */
 
+#define VALTAVAMATRIISI
+
 #include <errno.h>
 #include <unistd.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/syscall.h>
+       #include <sys/resource.h>
 
 #include <linux/sockios.h>
 static inline pid_t gettid()
@@ -129,8 +132,9 @@ void *frametuuperthread(void *x_void_ptr)
     struct timeval now;
 
     gettimeofday(&now,NULL);
-    ts.tv_sec = now.tv_sec+2;
-    ts.tv_nsec = now.tv_usec;
+
+    ts.tv_sec = now.tv_sec+3;
+    ts.tv_nsec = now.tv_usec*1000;
 
 
     int condval = pthread_cond_timedwait (&sync_cond, &sync_lock, &ts);
@@ -145,10 +149,11 @@ void *frametuuperthread(void *x_void_ptr)
     }
     else if (condval == ETIMEDOUT)
     {
+ //     debugf("swap buf: %p", swap_buffer);
       swap_buffer->SetTilePtrs(0);
       pthread_mutex_unlock (&sync_lock);
 
-      debugf("showing screen\n");
+      debugf("showing screen %i,%i\n", swap_buffer->width(), swap_buffer->height());
 
       swap_buffer->SetBrightness(30);
       swap_buffer->set_luminance_correct(true);
@@ -161,6 +166,13 @@ void *frametuuperthread(void *x_void_ptr)
          swap_buffer->SetPixelHDR(x,y, yy,yy/2,yy/4);
          }
 
+      static int pp = 0;
+
+      pp++;
+      pp %= 64;
+      swap_buffer->SetPixelHDR(pp, 0, 3000,3000,3000);
+
+#if 1
       centertext(swap_buffer, font, 1, "^^^");
 
       int centrow = swap_buffer->height() / 2;
@@ -169,6 +181,7 @@ void *frametuuperthread(void *x_void_ptr)
 
       const char *myip = getip();
       centertext(swap_buffer, font, swap_buffer->height() - 8, myip);
+#endif
 
       swap_buffer = matrix->SwapOnVSync(swap_buffer);
     }
@@ -184,19 +197,19 @@ rgb_matrix::FrameCanvas *creatematrix(int argc, char **argv)
 {
   RGBMatrix::Options defaults;
   defaults.hardware_mapping = "regular";  // or e.g. "adafruit-hat"
-#if 0
+#ifdef VALTAVAMATRIISI
   defaults.rows = 16;
   defaults.cols = 64;
   defaults.chain_length = 1;
   defaults.multiplexing = 7;
   defaults.parallel = 3;
-#endif
-
+#else
   defaults.rows = 32;
   defaults.cols = 64;
   defaults.chain_length = 3;
   defaults.multiplexing = 0;
   defaults.parallel = 3;
+#endif
 
   defaults.show_refresh_rate = true;
   //defaults.pwm_lsb_nanoseconds = 50;
@@ -267,8 +280,14 @@ typedef struct
 
 uint16_t** frameptrs;
 
-const int screentiles_x = 12;
-const int screentiles_y = 6;
+#ifdef VALTAVAMATRIISI
+  const int screentiles_x = 4;
+  const int screentiles_y = 3;
+#else
+  const int screentiles_x = 12;
+  const int screentiles_y = 6;
+#endif
+
 const int tilesize_x = 16;
 const int tilesize_y = 16;
 
@@ -289,7 +308,7 @@ void initrecv()
   }
 
 
-  int port = 9999;
+  int port = 9998;
 
 
 
@@ -312,6 +331,13 @@ void initrecv()
     printf("shokki, ei onnistu bind\n");
   }
 
+//  int rcvbufsiz = 16777216;
+  int rcvbufsiz = 1024*1024;
+  socklen_t rcvbufsiz_siz = sizeof(rcvbufsiz);
+  setsockopt(m_s, SOL_SOCKET, SO_RCVBUF, &rcvbufsiz, rcvbufsiz_siz);
+  getsockopt(m_s, SOL_SOCKET, SO_RCVBUF, &rcvbufsiz, &rcvbufsiz_siz);
+  printf("rcvbufsiz_siz %i, rcvbufsiz %i\n", rcvbufsiz_siz, rcvbufsiz);
+
   assert(sizeof(packethdr_t) == 8);
 }
 
@@ -320,6 +346,46 @@ void *recvloop(void *x_void_ptr)
    pthread_setname_np(pthread_self(), (const char *)x_void_ptr);
 
    pthread_t self = pthread_self();
+
+#if 1
+   {
+    int err;
+
+#if 0
+  struct rlimit rl;
+  rl.rlim_cur = RLIM_INFINITY;
+  rl.rlim_max = RLIM_INFINITY;
+
+    if (err = setrlimit(RLIMIT_RTPRIO, &rl)) {
+      fprintf(stderr, "error in rlimit: %s\n", strerror(err));
+    }
+#endif
+    int priority = 99;
+    struct sched_param p;
+    p.sched_priority = priority;
+    if ((err = pthread_setschedparam(self, SCHED_FIFO, &p))) {
+      fprintf(stderr, "FYI: Can't set realtime thread priority=%d %s\n",
+              priority, strerror(err));
+    }
+
+   }
+#endif
+
+   #if 1
+   {
+    int err;
+    cpu_set_t cpu_mask;
+    CPU_ZERO(&cpu_mask);
+    CPU_SET(0, &cpu_mask);
+
+
+    if ((err=pthread_setaffinity_np(self, sizeof(cpu_mask), &cpu_mask))) {
+      fprintf(stderr, "FYI: Couldn't set affinity: %s\n",
+              strerror(err));
+    }
+  }
+  #endif
+
 
    framemem_t* mempool = (framemem_t*)malloc(mempoolcount * framesize);
    int mempoolidx = 0;
@@ -458,6 +524,9 @@ void *recvloop(void *x_void_ptr)
       int xt = vidhdr.xpos / tilesize_x;
       int yt = vidhdr.ypos / tilesize_y;
 
+      if (xt < 0 || yt < 0 || xt > screentiles_x || yt > screentiles_y)
+        goto invalidframe;
+
       if (frameptrs[offs + yt * screentiles_x + xt])
       {
 //        printf("huh, frame already got\n");
@@ -468,6 +537,8 @@ void *recvloop(void *x_void_ptr)
 
       mempoolidx++;
       mempoolidx %= mempoolcount;
+
+      invalidframe:;
     }
     else if (vidhdr.type == 2)
     {
